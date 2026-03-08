@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "385675543410",
+    "project_id": "hive-app-f3c2d",
+    "storage_bucket": "hive-app-f3c2d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:385675543410:android:4d57d89d68419e348e53eb",
+        "android_client_info": {
+          "package_name": "com.example.hive_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCFMlM1AOWZzGNHS55bkTnRJrP13f9518M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:385675543410:android:587ebd13f64a8ba48e53eb",
+        "android_client_info": {
+          "package_name": "com.example.social_media_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCFMlM1AOWZzGNHS55bkTnRJrP13f9518M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

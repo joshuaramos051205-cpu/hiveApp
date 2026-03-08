@@ -1,0 +1,38 @@
+name: hive_app
+description: HiVE Social App — Bold Yellow & Black Bee Theme
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^2.32.0
+  firebase_auth: ^4.17.0
+  google_sign_in: ^6.2.1
+  file_picker: ^8.0.7
+  cloud_firestore: ^4.17.0
+  firebase_storage: ^11.6.0
+
+  # Networking
+  http: ^1.2.0
+
+  # Media
+  cached_network_image: ^3.3.1
+  video_player: ^2.8.3
+
+  # Fonts
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

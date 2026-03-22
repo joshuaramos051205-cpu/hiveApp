@@ -35,8 +35,7 @@ class _MainNavState extends State<MainNav> {
           position: Tween<Offset>(
             begin: const Offset(0, 1),
             end: Offset.zero,
-          ).animate(
-              CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
           child: child,
         ),
         transitionDuration: const Duration(milliseconds: 320),
@@ -59,8 +58,7 @@ class _MainNavState extends State<MainNav> {
           position: Tween<Offset>(
             begin: const Offset(0, 1),
             end: Offset.zero,
-          ).animate(
-              CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
           child: child,
         ),
         transitionDuration: const Duration(milliseconds: 350),
@@ -111,8 +109,7 @@ class _MainNavState extends State<MainNav> {
                 activeIcon: Icon(Icons.home_rounded),
                 label: ''),
             BottomNavigationBarItem(
-                icon: Icon(Icons.search_rounded),
-                label: ''),
+                icon: Icon(Icons.search_rounded), label: ''),
             // "+" always looks unselected — it's a modal trigger, not a tab
             BottomNavigationBarItem(
                 icon: Icon(Icons.add_box_outlined),
@@ -132,7 +129,6 @@ class _MainNavState extends State<MainNav> {
     );
   }
 }
-
 
 // ─── Bee Chat FAB ─────────────────────────────────────────────────────────────
 class _BeeChatFAB extends StatefulWidget {
@@ -198,13 +194,12 @@ class _BeeChatFABState extends State<_BeeChatFAB>
                   duration: const Duration(milliseconds: 200),
                   opacity: _hovered ? 1.0 : 0.0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 7),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                     decoration: BoxDecoration(
                       color: AppTheme.cardBg,
                       borderRadius: BorderRadius.circular(20),
-                      border:
-                      Border.all(color: AppTheme.primary, width: 1.2),
+                      border: Border.all(color: AppTheme.primary, width: 1.2),
                       boxShadow: [
                         BoxShadow(
                           color: AppTheme.primary.withOpacity(0.25),

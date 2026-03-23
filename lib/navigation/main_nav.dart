@@ -8,6 +8,7 @@ import '../activity/activity_screen.dart';
 import '../profile/profile_screen.dart';
 import '../core/app_theme.dart';
 import '../chat/hive_chat_screen.dart';
+import '../social/notification_service.dart';
 
 class MainNav extends StatefulWidget {
   const MainNav({super.key});
@@ -18,7 +19,8 @@ class MainNav extends StatefulWidget {
 class _MainNavState extends State<MainNav> {
   int _currentIndex = 0;
 
-  // CreateScreen is intentionally NOT in this list — it opens as a modal
+  // Nav: 0=Home  1=Explore  2=+(modal)  3=Activity  4=Profile
+  // Screens: 0=Feed  1=Explore  2=Activity  3=Profile
   final _screens = const [
     FeedScreen(),
     ExploreScreen(),
@@ -26,7 +28,6 @@ class _MainNavState extends State<MainNav> {
     ProfileScreen(),
   ];
 
-  // ── Open CreateScreen as a full-screen modal ──────────────────────────
   Future<void> _openCreate() async {
     final posted = await Navigator.of(context).push<bool>(
       PageRouteBuilder(
@@ -35,21 +36,20 @@ class _MainNavState extends State<MainNav> {
           position: Tween<Offset>(
             begin: const Offset(0, 1),
             end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          ).animate(
+              CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
           child: child,
         ),
         transitionDuration: const Duration(milliseconds: 320),
         fullscreenDialog: true,
       ),
     );
-
-    // If post was successful, jump to Profile tab (index 3)
     if (posted == true && mounted) {
-      setState(() => _currentIndex = 3);
+      setState(() => _currentIndex = 3); // jump to Profile after post
     }
   }
 
-  void _openChat() {
+  void _openBeeBot() {
     Navigator.push(
       context,
       PageRouteBuilder(
@@ -58,7 +58,8 @@ class _MainNavState extends State<MainNav> {
           position: Tween<Offset>(
             begin: const Offset(0, 1),
             end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          ).animate(
+              CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
           child: child,
         ),
         transitionDuration: const Duration(milliseconds: 350),
@@ -66,17 +67,16 @@ class _MainNavState extends State<MainNav> {
     );
   }
 
-  // Map bottom nav taps — index 2 is the "+" which opens modal
+  // Nav: 0=Home, 1=Explore, 2=+(modal), 3=Activity, 4=Profile
   void _onTabTapped(int i) {
     if (i == 2) {
       _openCreate();
-    } else {
-      // Shift index to account for removed CreateScreen slot
-      setState(() => _currentIndex = i > 2 ? i - 1 : i);
+      return;
     }
+    final screenIndex = i > 2 ? i - 1 : i;
+    setState(() => _currentIndex = screenIndex);
   }
 
-  // Map _currentIndex back to bottom nav highlight
   int get _navIndex => _currentIndex >= 2 ? _currentIndex + 1 : _currentIndex;
 
   @override
@@ -86,7 +86,7 @@ class _MainNavState extends State<MainNav> {
         index: _currentIndex,
         children: _screens,
       ),
-      floatingActionButton: _BeeChatFAB(onTap: _openChat),
+      floatingActionButton: _BeeChatFAB(onTap: _openBeeBot),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
@@ -103,26 +103,35 @@ class _MainNavState extends State<MainNav> {
           unselectedItemColor: const Color(0xFF555555),
           showSelectedLabels: false,
           showUnselectedLabels: false,
-          items: const [
+          items: [
+            // 0 — Home
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home_rounded),
+              label: '',
+            ),
+            // 1 — Explore
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.search_rounded),
+              label: '',
+            ),
+            // 2 — Create (modal, never highlighted)
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.add_box_outlined),
+              activeIcon: Icon(Icons.add_box_outlined),
+              label: '',
+            ),
+            // 3 — Activity (with unread badge)
             BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home_rounded),
-                label: ''),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.search_rounded), label: ''),
-            // "+" always looks unselected — it's a modal trigger, not a tab
-            BottomNavigationBarItem(
-                icon: Icon(Icons.add_box_outlined),
-                activeIcon: Icon(Icons.add_box_outlined),
-                label: ''),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.favorite_border_rounded),
-                activeIcon: Icon(Icons.favorite_rounded),
-                label: ''),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline_rounded),
-                activeIcon: Icon(Icons.person_rounded),
-                label: ''),
+              icon: _ActivityNavIcon(isSelected: _navIndex == 3),
+              label: '',
+            ),
+            // 4 — Profile
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline_rounded),
+              activeIcon: Icon(Icons.person_rounded),
+              label: '',
+            ),
           ],
         ),
       ),
@@ -130,7 +139,87 @@ class _MainNavState extends State<MainNav> {
   }
 }
 
-// ─── Bee Chat FAB ─────────────────────────────────────────────────────────────
+// ─── Activity Nav Icon with Unread Badge ─────────────────────────────────────
+
+class _ActivityNavIcon extends StatelessWidget {
+  final bool isSelected;
+  const _ActivityNavIcon({required this.isSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: NotificationService.unreadCountStream(),
+      builder: (context, snap) {
+        final count = snap.data ?? 0;
+        return _BadgeIcon(
+          icon: isSelected
+              ? Icons.favorite_rounded
+              : Icons.favorite_border_rounded,
+          count: count,
+          isSelected: isSelected,
+        );
+      },
+    );
+  }
+}
+
+// ─── Reusable Badge Icon ──────────────────────────────────────────────────────
+
+class _BadgeIcon extends StatelessWidget {
+  final IconData icon;
+  final int count;
+  final bool isSelected;
+
+  const _BadgeIcon({
+    required this.icon,
+    required this.count,
+    required this.isSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon,
+            color:
+                isSelected ? AppTheme.primary : const Color(0xFF555555)),
+        if (count > 0)
+          Positioned(
+            top: -6,
+            right: -8,
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: count > 9 ? 4 : 5,
+                vertical: 2,
+              ),
+              constraints:
+                  const BoxConstraints(minWidth: 16, minHeight: 16),
+              decoration: BoxDecoration(
+                color: AppTheme.primary,
+                borderRadius: BorderRadius.circular(10),
+                border:
+                    Border.all(color: AppTheme.scaffoldBg, width: 1.5),
+              ),
+              child: Text(
+                count > 99 ? '99+' : '$count',
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ─── BeeBot FAB ───────────────────────────────────────────────────────────────
+
 class _BeeChatFAB extends StatefulWidget {
   final VoidCallback onTap;
   const _BeeChatFAB({required this.onTap});
@@ -176,15 +265,12 @@ class _BeeChatFABState extends State<_BeeChatFAB>
         onTapCancel: () => _scaleCtrl.reverse(),
         child: AnimatedBuilder(
           animation: _scaleAnim,
-          builder: (_, child) => Transform.scale(
-            scale: _scaleAnim.value,
-            child: child,
-          ),
+          builder: (_, child) =>
+              Transform.scale(scale: _scaleAnim.value, child: child),
           child: Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              // ── Hello tooltip ──────────────────────────────────────────
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOutBack,
@@ -194,40 +280,30 @@ class _BeeChatFABState extends State<_BeeChatFAB>
                   duration: const Duration(milliseconds: 200),
                   opacity: _hovered ? 1.0 : 0.0,
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 7),
                     decoration: BoxDecoration(
                       color: AppTheme.cardBg,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppTheme.primary, width: 1.2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primary.withOpacity(0.25),
-                          blurRadius: 12,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+                      border: Border.all(
+                          color: AppTheme.primary, width: 1.2),
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('👋', style: TextStyle(fontSize: 13)),
+                      children: [
+                        Text('🐝', style: TextStyle(fontSize: 13)),
                         SizedBox(width: 5),
-                        Text(
-                          'Hello!',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
+                        Text('BeeBot AI',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            )),
                       ],
                     ),
                   ),
                 ),
               ),
-
-              // ── FAB Circle ─────────────────────────────────────────────
               Container(
                 width: 62,
                 height: 62,

@@ -9,6 +9,8 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import '../auth/auth_service.dart';
 import '../core/app_theme.dart';
+import '../social/follow_service.dart';
+import '../profile/user_profile_screen.dart';
 
 // ─── Profile Screen ───────────────────────────────────────────────────────────
 
@@ -87,7 +89,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                   // Avatar + Buttons row
                   Row(
                     children: [
-                      // Tappable avatar
                       GestureDetector(
                         onTap: () => _showAvatarOptions(context, uid),
                         child: Stack(
@@ -106,7 +107,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     : null,
                                 child: photoUrl == null
                                     ? const Text('🐝',
-                                    style: TextStyle(fontSize: 36))
+                                        style: TextStyle(fontSize: 36))
                                     : null,
                               ),
                             ),
@@ -179,33 +180,56 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                   const SizedBox(height: 20),
 
-                  // ── Stats row ──────────────────────────────────────────
+                  // ── Stats row — ALL counts are real-time from Firestore ──
                   if (uid != null)
+                    // Posts count stream
                     StreamBuilder<QuerySnapshot>(
                       stream: FirebaseFirestore.instance
                           .collection('buzzes')
                           .where('uid', isEqualTo: uid)
                           .snapshots(),
-                      builder: (context, snapshot) {
-                        final postCount =
-                            snapshot.data?.docs.length ?? 0;
-                        return Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _Stat(label: 'Posts', value: '$postCount'),
-                            _dividerV(),
-                            _Stat(
-                                label: 'Followers',
-                                value: '1.4K',
-                                onTap: () =>
-                                    _showFollowList(context, 'Followers')),
-                            _dividerV(),
-                            _Stat(
-                                label: 'Following',
-                                value: '312',
-                                onTap: () =>
-                                    _showFollowList(context, 'Following')),
-                          ],
+                      builder: (context, postSnap) {
+                        final postCount = postSnap.data?.docs.length ?? 0;
+
+                        // Followers count stream (nested)
+                        return StreamBuilder<int>(
+                          stream: FollowService.followersCountStream(uid),
+                          builder: (context, followersSnap) {
+                            final followersCount = followersSnap.data ?? 0;
+
+                            // Following count stream (nested)
+                            return StreamBuilder<int>(
+                              stream: FollowService.followingCountStream(uid),
+                              builder: (context, followingSnap) {
+                                final followingCount = followingSnap.data ?? 0;
+
+                                return Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceAround,
+                                  children: [
+                                    _Stat(
+                                      label: 'Posts',
+                                      value: '$postCount',
+                                    ),
+                                    _dividerV(),
+                                    _Stat(
+                                      label: 'Followers',
+                                      value: '$followersCount',
+                                      onTap: () => _showFollowList(
+                                          context, 'Followers', uid),
+                                    ),
+                                    _dividerV(),
+                                    _Stat(
+                                      label: 'Following',
+                                      value: '$followingCount',
+                                      onTap: () => _showFollowList(
+                                          context, 'Following', uid),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
                         );
                       },
                     ),
@@ -241,11 +265,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         body: TabBarView(
           controller: _tabController,
           children: [
-            // Grid tab
-            uid != null
-                ? _PostsGrid(uid: uid)
-                : const _EmptyState(),
-            // Reels tab (placeholder)
+            uid != null ? _PostsGrid(uid: uid) : const _EmptyState(),
             const _EmptyState(
               icon: Icons.play_circle_outline_rounded,
               message: 'No reels yet 🐝',
@@ -286,7 +306,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           const SizedBox(height: 8),
           ListTile(
             leading:
-            const Icon(Icons.photo_library_rounded, color: Colors.white),
+                const Icon(Icons.photo_library_rounded, color: Colors.white),
             title: const Text('Choose from library',
                 style: TextStyle(color: Colors.white)),
             onTap: () async {
@@ -302,8 +322,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   style: TextStyle(color: Colors.redAccent)),
               onTap: () async {
                 Navigator.pop(context);
-                await FirebaseAuth.instance.currentUser
-                    ?.updatePhotoURL(null);
+                await FirebaseAuth.instance.currentUser?.updatePhotoURL(null);
                 if (mounted) setState(() {});
               },
             ),
@@ -315,8 +334,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Future<void> _changeAvatar(String? uid) async {
     if (uid == null) return;
-    final result = await FilePicker.platform
-        .pickFiles(type: FileType.image);
+    final result = await FilePicker.platform.pickFiles(type: FileType.image);
     if (result == null || result.files.single.path == null) return;
 
     final file = File(result.files.single.path!);
@@ -333,10 +351,9 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // ── Edit Profile ──────────────────────────────────────────────────────────
   void _showEditProfile(BuildContext context, User? user) {
-    final nameCtrl =
-    TextEditingController(text: user?.displayName ?? '');
+    final nameCtrl = TextEditingController(text: user?.displayName ?? '');
     final bioCtrl =
-    TextEditingController(text: '🐝 Living life in the hive');
+        TextEditingController(text: '🐝 Living life in the hive');
 
     showModalBottomSheet(
       context: context,
@@ -449,8 +466,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             },
           ),
           ListTile(
-            leading:
-            const Icon(Icons.qr_code_rounded, color: Colors.white),
+            leading: const Icon(Icons.qr_code_rounded, color: Colors.white),
             title: const Text('Share QR code',
                 style: TextStyle(color: Colors.white)),
             onTap: () => Navigator.pop(context),
@@ -461,8 +477,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ── Follow list ───────────────────────────────────────────────────────────
-  void _showFollowList(BuildContext context, String title) {
+  // ── Follow list (real users from Firestore) ───────────────────────────────
+  void _showFollowList(BuildContext context, String title, String uid) {
+    final stream = title == 'Followers'
+        ? FollowService.followersListStream(uid)
+        : FollowService.followingListStream(uid);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.cardBg,
@@ -490,39 +510,78 @@ class _ProfileScreenState extends State<ProfileScreen>
                     fontSize: 15)),
             const Divider(color: AppTheme.dividerColor),
             Expanded(
-              child: ListView.builder(
-                controller: ctrl,
-                itemCount: 10,
-                itemBuilder: (_, i) => ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppTheme.surfaceBg,
-                    backgroundImage: NetworkImage(
-                        'https://i.pravatar.cc/150?u=follow$i'),
-                  ),
-                  title: Text('buzzer_${i + 1}',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600)),
-                  subtitle: Text('bee_${i + 1}@hive.app',
-                      style: const TextStyle(
-                          color: AppTheme.textSecondary,
-                          fontSize: 12)),
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: AppTheme.primary.withOpacity(0.4)),
-                    ),
-                    child: const Text('Follow',
-                        style: TextStyle(
-                            color: AppTheme.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                ),
+              child: StreamBuilder<List<Map<String, dynamic>>>(
+                stream: stream,
+                builder: (context, snap) {
+                  if (!snap.hasData) {
+                    return const Center(
+                        child: CircularProgressIndicator(
+                            color: AppTheme.primary));
+                  }
+                  final users = snap.data!;
+                  if (users.isEmpty) {
+                    return Center(
+                      child: Text(
+                        title == 'Followers'
+                            ? 'No followers yet 🐝'
+                            : 'Not following anyone yet 🐝',
+                        style: const TextStyle(color: AppTheme.textSecondary),
+                      ),
+                    );
+                  }
+                  return ListView.builder(
+                    controller: ctrl,
+                    itemCount: users.length,
+                    itemBuilder: (_, i) {
+                      final u = users[i];
+                      final targetUid = u['uid'] as String? ?? '';
+                      final name = u['name'] as String? ?? 'HiVE User';
+                      final email = u['email'] as String? ?? '';
+                      final photo = u['photoUrl'] as String? ?? '';
+                      return ListTile(
+                        onTap: () {
+                          if (targetUid.isEmpty) return;
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => UserProfileScreen(uid: targetUid),
+                          ));
+                        },
+                        leading: GestureDetector(
+                          onTap: () {
+                            if (targetUid.isEmpty) return;
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => UserProfileScreen(uid: targetUid),
+                            ));
+                          },
+                          child: CircleAvatar(
+                            backgroundColor: AppTheme.surfaceBg,
+                            backgroundImage: photo.isNotEmpty
+                                ? NetworkImage(photo)
+                                : null,
+                            child: photo.isEmpty
+                                ? Text(
+                                    name.isNotEmpty
+                                        ? name[0].toUpperCase()
+                                        : '🐝',
+                                    style: const TextStyle(color: Colors.white),
+                                  )
+                                : null,
+                          ),
+                        ),
+                        title: Text(name,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600)),
+                        subtitle: Text(email,
+                            style: const TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 12)),
+                        trailing: targetUid.isNotEmpty
+                            ? _FollowBackButton(targetUid: targetUid)
+                            : null,
+                      );
+                    },
+                  );
+                },
               ),
             ),
           ],
@@ -552,7 +611,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           const SizedBox(height: 16),
           ListTile(
             leading:
-            const Icon(Icons.settings_outlined, color: Colors.white),
+                const Icon(Icons.settings_outlined, color: Colors.white),
             title: const Text('Settings',
                 style: TextStyle(color: Colors.white)),
             onTap: () => Navigator.pop(context),
@@ -560,13 +619,13 @@ class _ProfileScreenState extends State<ProfileScreen>
           ListTile(
             leading: const Icon(Icons.bookmark_border_rounded,
                 color: Colors.white),
-            title: const Text('Saved',
-                style: TextStyle(color: Colors.white)),
+            title:
+                const Text('Saved', style: TextStyle(color: Colors.white)),
             onTap: () => Navigator.pop(context),
           ),
           ListTile(
-            leading: const Icon(Icons.logout_rounded,
-                color: Colors.redAccent),
+            leading:
+                const Icon(Icons.logout_rounded, color: Colors.redAccent),
             title: const Text('Sign Out',
                 style: TextStyle(color: Colors.redAccent)),
             onTap: () async {
@@ -597,8 +656,7 @@ class _PostsGrid extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
-              child:
-              CircularProgressIndicator(color: AppTheme.primary));
+              child: CircularProgressIndicator(color: AppTheme.primary));
         }
 
         if (snapshot.hasError) {
@@ -621,7 +679,6 @@ class _PostsGrid extends StatelessWidget {
           );
         }
 
-        // Sort client-side newest first
         final docs = List<QueryDocumentSnapshot>.from(
             snapshot.data?.docs ?? []);
         docs.sort((a, b) {
@@ -633,9 +690,7 @@ class _PostsGrid extends StatelessWidget {
           return (bT as dynamic).compareTo(aT as dynamic);
         });
 
-        if (docs.isEmpty) {
-          return const _EmptyState();
-        }
+        if (docs.isEmpty) return const _EmptyState();
 
         return GridView.builder(
           padding: EdgeInsets.zero,
@@ -648,9 +703,7 @@ class _PostsGrid extends StatelessWidget {
           itemBuilder: (context, i) {
             final data = docs[i].data() as Map<String, dynamic>;
             final text = data['text'] as String? ?? '';
-            final mediaUrls =
-            List<String>.from(data['mediaUrls'] ?? []);
-            final docId = docs[i].id;
+            final mediaUrls = List<String>.from(data['mediaUrls'] ?? []);
 
             return GestureDetector(
               onTap: () => _openPost(context, docs[i]),
@@ -658,41 +711,37 @@ class _PostsGrid extends StatelessWidget {
                 color: AppTheme.surfaceBg,
                 child: mediaUrls.isNotEmpty
                     ? Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.network(
-                      mediaUrls.first,
-                      fit: BoxFit.cover,
-                      loadingBuilder: (_, child, progress) {
-                        if (progress == null) return child;
-                        return Container(
-                          color: AppTheme.surfaceBg,
-                          child: const Center(
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 1.5,
-                                  color: AppTheme.primary),
-                            ),
+                        fit: StackFit.expand,
+                        children: [
+                          Image.network(
+                            mediaUrls.first,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (_, child, progress) {
+                              if (progress == null) return child;
+                              return Container(
+                                color: AppTheme.surfaceBg,
+                                child: const Center(
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 1.5,
+                                        color: AppTheme.primary),
+                                  ),
+                                ),
+                              );
+                            },
+                            errorBuilder: (_, __, ___) => _textTile(text),
                           ),
-                        );
-                      },
-                      errorBuilder: (_, __, ___) =>
-                          _textTile(text),
-                    ),
-                    // Multiple images indicator
-                    if (mediaUrls.length > 1)
-                      const Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Icon(
-                            Icons.collections_rounded,
-                            color: Colors.white,
-                            size: 16),
-                      ),
-                  ],
-                )
+                          if (mediaUrls.length > 1)
+                            const Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Icon(Icons.collections_rounded,
+                                  color: Colors.white, size: 16),
+                            ),
+                        ],
+                      )
                     : _textTile(text),
               ),
             );
@@ -745,8 +794,7 @@ class _PostDetailScreen extends StatefulWidget {
 class _PostDetailScreenState extends State<_PostDetailScreen> {
   late Map<String, dynamic> data;
   bool _liked = false;
-  String get _uid =>
-      FirebaseAuth.instance.currentUser?.uid ?? '';
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   @override
   void initState() {
@@ -781,7 +829,7 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.cardBg,
         shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Delete buzz?',
             style: TextStyle(
                 color: Colors.white, fontWeight: FontWeight.w700)),
@@ -826,8 +874,7 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text('Buzz',
-            style:
-            TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
         actions: [
           if (isOwn)
             IconButton(
@@ -841,13 +888,11 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             ListTile(
               leading: CircleAvatar(
                 backgroundColor: AppTheme.surfaceBg,
-                backgroundImage: photoUrl.isNotEmpty
-                    ? NetworkImage(photoUrl)
-                    : null,
+                backgroundImage:
+                    photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
                 child: photoUrl.isEmpty
                     ? const Text('🐝', style: TextStyle(fontSize: 18))
                     : null,
@@ -859,45 +904,37 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
                   style: TextStyle(
                       color: AppTheme.textSecondary, fontSize: 12)),
             ),
-
-            // Text
             if (text.isNotEmpty)
               Padding(
                 padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Text(text,
                     style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        height: 1.5)),
+                        color: Colors.white, fontSize: 15, height: 1.5)),
               ),
-
-            // Media
             if (mediaUrls.isNotEmpty)
               ...mediaUrls.map((url) => Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Image.network(
-                  url,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (_, child, progress) {
-                    if (progress == null) return child;
-                    return Container(
-                      height: 300,
-                      color: AppTheme.surfaceBg,
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                            color: AppTheme.primary),
-                      ),
-                    );
-                  },
-                ),
-              )),
-
-            // Actions
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Image.network(
+                      url,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (_, child, progress) {
+                        if (progress == null) return child;
+                        return Container(
+                          height: 300,
+                          color: AppTheme.surfaceBg,
+                          child: const Center(
+                            child: CircularProgressIndicator(
+                                color: AppTheme.primary),
+                          ),
+                        );
+                      },
+                    ),
+                  )),
             Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
                   GestureDetector(
@@ -928,7 +965,6 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
                 ],
               ),
             ),
-
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Text(
@@ -947,7 +983,7 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
   }
 }
 
-// ─── Empty State ───────────────────────────────────────────────────────────────
+// ─── Empty State ──────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
   final IconData icon;
@@ -969,9 +1005,7 @@ class _EmptyState extends StatelessWidget {
             message,
             textAlign: TextAlign.center,
             style: const TextStyle(
-                color: AppTheme.textSecondary,
-                fontSize: 14,
-                height: 1.6),
+                color: AppTheme.textSecondary, fontSize: 14, height: 1.6),
           ),
         ],
       ),
@@ -1044,7 +1078,7 @@ class _EditField extends StatelessWidget {
               borderSide: BorderSide.none,
             ),
             contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           ),
         ),
       ],
@@ -1072,8 +1106,8 @@ class _Stat extends StatelessWidget {
                 color: Colors.white)),
         const SizedBox(height: 2),
         Text(label,
-            style: const TextStyle(
-                color: AppTheme.textSecondary, fontSize: 12)),
+            style:
+                const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
       ]),
     );
   }
@@ -1091,8 +1125,7 @@ class _ActionButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         decoration: BoxDecoration(
           color: AppTheme.surfaceBg,
           borderRadius: BorderRadius.circular(10),
@@ -1104,6 +1137,73 @@ class _ActionButton extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 fontSize: 13)),
       ),
+    );
+  }
+}
+
+// ─── Follow Back Button ───────────────────────────────────────────────────────
+
+class _FollowBackButton extends StatefulWidget {
+  final String targetUid;
+  const _FollowBackButton({required this.targetUid});
+
+  @override
+  State<_FollowBackButton> createState() => _FollowBackButtonState();
+}
+
+class _FollowBackButtonState extends State<_FollowBackButton> {
+  bool _loading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<bool>(
+      stream: FollowService.isFollowingStream(widget.targetUid),
+      builder: (context, snap) {
+        final isFollowing = snap.data ?? false;
+        return GestureDetector(
+          onTap: _loading
+              ? null
+              : () async {
+                  setState(() => _loading = true);
+                  try {
+                    if (isFollowing) {
+                      await FollowService.unfollow(widget.targetUid);
+                    } else {
+                      await FollowService.follow(widget.targetUid);
+                    }
+                  } finally {
+                    if (mounted) setState(() => _loading = false);
+                  }
+                },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color: isFollowing ? AppTheme.surfaceBg : AppTheme.primary,
+              borderRadius: BorderRadius.circular(10),
+              border: isFollowing
+                  ? Border.all(color: AppTheme.dividerColor)
+                  : null,
+            ),
+            child: _loading
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.black),
+                  )
+                : Text(
+                    isFollowing ? 'Following' : 'Follow Back',
+                    style: TextStyle(
+                      color: isFollowing ? Colors.white : Colors.black,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+          ),
+        );
+      },
     );
   }
 }

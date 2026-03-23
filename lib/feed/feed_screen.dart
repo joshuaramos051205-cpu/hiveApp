@@ -1,6 +1,7 @@
 // feed/feed_screen.dart
 import 'package:hive_app/chat/users_list_screen.dart';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -12,6 +13,7 @@ import '../core/app_theme.dart';
 import '../core/video_widget.dart';
 import 'post_model.dart';
 import 'feed_service.dart';
+import '../profile/user_profile_screen.dart';
 
 class FeedScreen extends StatelessWidget {
   const FeedScreen({super.key});
@@ -35,11 +37,11 @@ class FeedScreen extends StatelessWidget {
           ),
         ]),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none_rounded,
-                color: Colors.white, size: 26),
-            onPressed: () {},
-          ),
+          // IconButton(
+          //   icon: const Icon(Icons.notifications_none_rounded,
+          //       color: Colors.white, size: 26),
+          //   onPressed: () {},
+          // ),
           IconButton(
             icon: const Icon(Icons.send_outlined,
                 color: Colors.white, size: 24),
@@ -107,6 +109,7 @@ class _Story {
   final String username;
   final String userAvatar;
   final String mediaUrl;
+  final String caption;
   final DateTime createdAt;
 
   _Story({
@@ -115,6 +118,7 @@ class _Story {
     required this.username,
     required this.userAvatar,
     required this.mediaUrl,
+    required this.caption,
     required this.createdAt,
   });
 
@@ -126,14 +130,13 @@ class _Story {
       username: d['username'] as String? ?? 'HiVE User',
       userAvatar: d['userAvatar'] as String? ?? '',
       mediaUrl: d['mediaUrl'] as String? ?? '',
+      caption: d['caption'] as String? ?? '',
       createdAt:
-      (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 
-  /// Stories expire after 24 hours
-  bool get isAlive =>
-      DateTime.now().difference(createdAt).inHours < 24;
+  bool get isAlive => DateTime.now().difference(createdAt).inHours < 24;
 }
 
 // ─── Stories Row ──────────────────────────────────────────────────────────────
@@ -141,70 +144,177 @@ class _Story {
 class _StoriesRow extends StatelessWidget {
   const _StoriesRow();
 
-  /// Upload a new story image for the current user
   Future<void> _addStory(BuildContext context) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final result =
-    await FilePicker.platform.pickFiles(type: FileType.image);
-    if (result == null || result.files.single.path == null) return;
-
-    // Show uploading indicator
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      SnackBar(
-        content: const Text('Uploading story… 🐝'),
-        backgroundColor: AppTheme.primary,
-        behavior: SnackBarBehavior.floating,
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 3),
-      ),
+    // Show caption dialog first
+    String caption = '';
+    final shouldProceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final captionCtrl = TextEditingController();
+        return AlertDialog(
+          backgroundColor: AppTheme.cardBg,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Text('Add Story',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 17)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Add a caption (optional)',
+                  style: TextStyle(
+                      color: AppTheme.textSecondary, fontSize: 13)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: captionCtrl,
+                style: const TextStyle(color: Colors.white),
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'What\'s the buzz?',
+                  hintStyle: TextStyle(color: AppTheme.textSecondary),
+                ),
+                onChanged: (v) => caption = v,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppTheme.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Pick Photo',
+                  style: TextStyle(
+                      color: AppTheme.primary, fontWeight: FontWeight.w800)),
+            ),
+          ],
+        );
+      },
     );
 
+    if (shouldProceed != true) return;
+    if (!context.mounted) return;
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: kIsWeb,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final pf = result.files.single;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(SnackBar(
+      content: const Text('Uploading story… 🐝'),
+      backgroundColor: AppTheme.primary,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      duration: const Duration(seconds: 4),
+    ));
+
     try {
-      final file = File(result.files.single.path!);
+      final ext = (pf.extension ?? 'jpg').toLowerCase();
       final ref = FirebaseStorage.instance
           .ref()
           .child('stories')
-          .child('${user.uid}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+          .child('${user.uid}_${DateTime.now().millisecondsSinceEpoch}.$ext');
 
-      await ref.putFile(file);
+      if (kIsWeb || pf.bytes != null) {
+        final bytes = pf.bytes ?? await File(pf.path!).readAsBytes();
+        await ref.putData(bytes,
+            SettableMetadata(contentType: 'image/$ext'));
+      } else {
+        await ref.putFile(File(pf.path!));
+      }
+
       final url = await ref.getDownloadURL();
 
-      // Write story doc — visible to ALL users via the stories collection
       await FirebaseFirestore.instance.collection('stories').add({
         'uid': user.uid,
         'username': user.displayName ?? 'HiVE User',
         'userAvatar': user.photoURL ?? '',
         'mediaUrl': url,
+        'caption': caption.trim(),
         'createdAt': FieldValue.serverTimestamp(),
+        'viewedBy': [],
       });
 
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('Story posted! 🍯'),
-          backgroundColor: AppTheme.primary,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      messenger.showSnackBar(SnackBar(
+        content: const Text('Story posted! 🍯'),
+        backgroundColor: AppTheme.primary,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ));
     } catch (e) {
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('Failed to upload story: $e'),
-          backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+      messenger.showSnackBar(SnackBar(
+        content: Text('Failed: $e'),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
     }
+  }
+
+  Future<void> _deleteStory(BuildContext context, String storyId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.cardBg,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete story?',
+            style: TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+        content: const Text('This cannot be undone.',
+            style: TextStyle(color: AppTheme.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete',
+                style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await FirebaseFirestore.instance
+          .collection('stories')
+          .doc(storyId)
+          .delete();
+    }
+  }
+
+  void _openStory(BuildContext context, _Story story,
+      List<_Story> allStories) {
+    final userStories = allStories
+        .where((s) => s.uid == story.uid)
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (_, __, ___) => _StoryViewer(
+          stories: userStories,
+          onDelete: (id) => _deleteStory(context, id),
+        ),
+      ),
+    );
   }
 
   @override
@@ -219,7 +329,6 @@ class _StoriesRow extends StatelessWidget {
             .orderBy('createdAt', descending: false)
             .snapshots(),
         builder: (context, snap) {
-          // Parse + filter expired stories
           final allStories = (snap.data?.docs ?? [])
               .map((d) => _Story.fromDoc(d))
               .where((s) => s.isAlive)
@@ -229,193 +338,167 @@ class _StoriesRow extends StatelessWidget {
           final Map<String, _Story> latestByUser = {};
           for (final s in allStories) {
             if (!latestByUser.containsKey(s.uid) ||
-                s.createdAt
-                    .isAfter(latestByUser[s.uid]!.createdAt)) {
+                s.createdAt.isAfter(latestByUser[s.uid]!.createdAt)) {
               latestByUser[s.uid] = s;
             }
           }
 
-          // Current user's story (if any) goes first after "Your Story"
+          final myStory = latestByUser[currentUid];
           final others = latestByUser.values
               .where((s) => s.uid != currentUid)
               .toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-          final myStory = latestByUser[currentUid];
-
           return ListView(
             scrollDirection: Axis.horizontal,
-            padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             children: [
-              // ── "Your Story" / Add button ─────────────────────────
+              // ── "Your Story" bubble ──────────────────────────────────
               Padding(
                 padding: const EdgeInsets.only(right: 14),
                 child: GestureDetector(
-                  // Tap: view story if exists, else upload
                   onTap: () {
                     if (myStory != null) {
                       final myStories = allStories
                           .where((s) => s.uid == currentUid)
                           .toList()
-                        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-                      _openStory(context, myStory, myStories);
+                        ..sort((a, b) =>
+                            a.createdAt.compareTo(b.createdAt));
+                      _openStory(context, myStory, allStories);
                     } else {
                       _addStory(context);
                     }
                   },
-                  // Long-press: always add a new story
                   onLongPress: () => _addStory(context),
-                  child: Column(
-                    children: [
-                      Stack(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(2.5),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              // Gradient ring if current user has an
-                              // active story, plain if not
-                              gradient: myStory != null
-                                  ? const LinearGradient(
-                                colors: [
-                                  AppTheme.primary,
-                                  Color(0xFFFF8C00)
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              )
-                                  : null,
-                              color: myStory == null
-                                  ? AppTheme.surfaceBg
-                                  : null,
-                            ),
-                            child: CircleAvatar(
-                              radius: 28,
-                              backgroundColor: AppTheme.surfaceBg,
-                              backgroundImage: myStory != null
-                                  ? NetworkImage(myStory.userAvatar)
-                                  : (FirebaseAuth.instance.currentUser
-                                  ?.photoURL !=
-                                  null
-                                  ? NetworkImage(FirebaseAuth
-                                  .instance
-                                  .currentUser!
-                                  .photoURL!)
-                                  : null),
-                              child: (myStory == null &&
-                                  FirebaseAuth.instance.currentUser
-                                      ?.photoURL ==
-                                      null)
-                                  ? const Icon(Icons.add,
-                                  color: AppTheme.primary,
-                                  size: 26)
-                                  : null,
-                            ),
-                          ),
-                          // "+" badge
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              width: 18,
-                              height: 18,
-                              decoration: BoxDecoration(
-                                color: AppTheme.primary,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: AppTheme.scaffoldBg,
-                                    width: 2),
-                              ),
-                              child: const Icon(Icons.add,
-                                  color: Colors.black87, size: 11),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Your Story',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.textSecondary),
-                      ),
-                    ],
+                  child: _StoryBubble(
+                    story: myStory,
+                    label: 'Your Story',
+                    isOwn: true,
+                    isSeen: false,
+                    currentUserPhoto:
+                        FirebaseAuth.instance.currentUser?.photoURL,
                   ),
                 ),
               ),
 
-              // ── Other users' stories from Firestore ───────────────
-              ...others.map(
-                    (story) => Padding(
-                  padding: const EdgeInsets.only(right: 14),
-                  child: GestureDetector(
-                    onTap: () =>
-                        _openStory(context, story, allStories),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(2.5),
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              colors: [
-                                AppTheme.primary,
-                                Color(0xFFFF8C00)
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                          ),
-                          child: CircleAvatar(
-                            radius: 28,
-                            backgroundColor: AppTheme.surfaceBg,
-                            backgroundImage:
-                            story.userAvatar.isNotEmpty
-                                ? NetworkImage(story.userAvatar)
-                                : null,
-                            child: story.userAvatar.isEmpty
-                                ? const Text('🐝',
-                                style: TextStyle(fontSize: 20))
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          story.username.length > 9
-                              ? '${story.username.substring(0, 8)}…'
-                              : story.username,
-                          style: const TextStyle(
-                              fontSize: 11,
-                              color: AppTheme.textSecondary),
-                        ),
-                      ],
+              // ── Other users' stories ─────────────────────────────────
+              ...others.map((story) => Padding(
+                    padding: const EdgeInsets.only(right: 14),
+                    child: GestureDetector(
+                      onTap: () => _openStory(context, story, allStories),
+                      child: _StoryBubble(
+                        story: story,
+                        label: story.username.length > 9
+                            ? '${story.username.substring(0, 8)}…'
+                            : story.username,
+                        isOwn: false,
+                        isSeen: (story.id.isNotEmpty) &&
+                            ((snap.data?.docs
+                                    .firstWhere((d) => d.id == story.id,
+                                        orElse: () => snap.data!.docs.first)
+                                    .data() as Map<String, dynamic>)[
+                                'viewedBy'] as List?)
+                                ?.contains(currentUid) ==
+                            true,
+                      ),
                     ),
-                  ),
-                ),
-              ),
+                  )),
             ],
           );
         },
       ),
     );
   }
+}
 
-  /// Full-screen story viewer
-  void _openStory(BuildContext context, _Story story,
-      List<_Story> allStories) {
-    // Collect all stories for this user (could be multiple)
-    final userStories =
-    allStories.where((s) => s.uid == story.uid).toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+// ─── Story Bubble ─────────────────────────────────────────────────────────────
 
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        opaque: false,
-        pageBuilder: (_, __, ___) =>
-            _StoryViewer(stories: userStories),
-      ),
+class _StoryBubble extends StatelessWidget {
+  final _Story? story;
+  final String label;
+  final bool isOwn;
+  final bool isSeen;
+  final String? currentUserPhoto;
+
+  const _StoryBubble({
+    required this.story,
+    required this.label,
+    required this.isOwn,
+    required this.isSeen,
+    this.currentUserPhoto,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasStory = story != null;
+    final avatarUrl = isOwn
+        ? (story?.userAvatar ?? currentUserPhoto ?? '')
+        : (story?.userAvatar ?? '');
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Stack(
+          children: [
+            // Gradient ring — yellow if unseen story, grey if seen/no story
+            Container(
+              padding: const EdgeInsets.all(2.5),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: hasStory && !isSeen
+                    ? const LinearGradient(
+                        colors: [AppTheme.primary, Color(0xFFFF8C00)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
+                color: hasStory && isSeen
+                    ? Colors.white24
+                    : (!hasStory ? AppTheme.surfaceBg : null),
+              ),
+              child: CircleAvatar(
+                radius: 28,
+                backgroundColor: AppTheme.surfaceBg,
+                backgroundImage:
+                    avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                child: avatarUrl.isEmpty
+                    ? const Icon(Icons.person_rounded,
+                        color: Colors.white54, size: 26)
+                    : null,
+              ),
+            ),
+            // "+" badge for own story slot
+            if (isOwn)
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary,
+                    shape: BoxShape.circle,
+                    border:
+                        Border.all(color: AppTheme.scaffoldBg, width: 2),
+                  ),
+                  child: const Icon(Icons.add,
+                      color: Colors.black87, size: 11),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color:
+                hasStory && !isSeen ? Colors.white : AppTheme.textSecondary,
+            fontWeight:
+                hasStory && !isSeen ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -424,7 +507,9 @@ class _StoriesRow extends StatelessWidget {
 
 class _StoryViewer extends StatefulWidget {
   final List<_Story> stories;
-  const _StoryViewer({required this.stories});
+  final Future<void> Function(String storyId) onDelete;
+  const _StoryViewer(
+      {required this.stories, required this.onDelete});
 
   @override
   State<_StoryViewer> createState() => _StoryViewerState();
@@ -434,6 +519,10 @@ class _StoryViewerState extends State<_StoryViewer>
     with SingleTickerProviderStateMixin {
   int _index = 0;
   late AnimationController _progress;
+  final _replyCtrl = TextEditingController();
+  bool _showReply = false;
+  final String _myUid =
+      FirebaseAuth.instance.currentUser?.uid ?? '';
 
   @override
   void initState() {
@@ -442,15 +531,28 @@ class _StoryViewerState extends State<_StoryViewer>
       vsync: this,
       duration: const Duration(seconds: 5),
     )..addStatusListener((status) {
-      if (status == AnimationStatus.completed) _next();
-    });
+        if (status == AnimationStatus.completed) _next();
+      });
     _progress.forward();
+    _markViewed();
+  }
+
+  void _markViewed() {
+    final story = widget.stories[_index];
+    if (story.uid == _myUid) return; // don't mark own story
+    FirebaseFirestore.instance
+        .collection('stories')
+        .doc(story.id)
+        .update({
+      'viewedBy': FieldValue.arrayUnion([_myUid]),
+    }).catchError((_) {});
   }
 
   void _next() {
     if (_index < widget.stories.length - 1) {
       setState(() => _index++);
       _progress.forward(from: 0);
+      _markViewed();
     } else {
       Navigator.pop(context);
     }
@@ -463,20 +565,82 @@ class _StoryViewerState extends State<_StoryViewer>
     }
   }
 
+  Future<void> _sendReply(String replyText) async {
+    if (replyText.trim().isEmpty) return;
+    final story = widget.stories[_index];
+    final me = FirebaseAuth.instance.currentUser;
+    if (me == null) return;
+
+    // Send as a chat message to the story owner
+    final chatId = [me.uid, story.uid]..sort();
+    final chatRef = FirebaseFirestore.instance
+        .collection('chats')
+        .doc(chatId.join('_'));
+
+    final chatSnap = await chatRef.get();
+    if (!chatSnap.exists) {
+      await chatRef.set({
+        'participants': [me.uid, story.uid],
+        'participantNames': {
+          me.uid: me.displayName ?? 'User',
+          story.uid: story.username,
+        },
+        'participantPhotos': {
+          me.uid: me.photoURL ?? '',
+          story.uid: story.userAvatar,
+        },
+        'lastMessage': '',
+        'lastMessageAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'unreadCount_${me.uid}': 0,
+        'unreadCount_${story.uid}': 0,
+      });
+    }
+
+    await chatRef.collection('messages').add({
+      'senderId': me.uid,
+      'senderName': me.displayName ?? 'User',
+      'text': '📸 Replied to your story: $replyText',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await chatRef.update({
+      'lastMessage': '📸 Replied to your story: $replyText',
+      'lastMessageAt': FieldValue.serverTimestamp(),
+      'unreadCount_${story.uid}': FieldValue.increment(1),
+    });
+
+    _replyCtrl.clear();
+    setState(() => _showReply = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Reply sent! 🐝'),
+        backgroundColor: AppTheme.primary,
+        behavior: SnackBarBehavior.floating,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ));
+    }
+  }
+
   @override
   void dispose() {
     _progress.dispose();
+    _replyCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final story = widget.stories[_index];
+    final isOwn = story.uid == _myUid;
 
     return Scaffold(
       backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: true,
       body: GestureDetector(
         onTapDown: (details) {
+          if (_showReply) return;
           final half = MediaQuery.of(context).size.width / 2;
           if (details.globalPosition.dx < half) {
             _prev();
@@ -484,31 +648,35 @@ class _StoryViewerState extends State<_StoryViewer>
             _next();
           }
         },
+        onVerticalDragEnd: (details) {
+          if (details.primaryVelocity != null &&
+              details.primaryVelocity! > 200) {
+            Navigator.pop(context);
+          }
+        },
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Story image
+            // ── Story image ────────────────────────────────────────────
             CachedNetworkImage(
               imageUrl: story.mediaUrl,
-              fit: BoxFit.contain,
+              fit: BoxFit.cover,
               placeholder: (_, __) => const Center(
-                  child: CircularProgressIndicator(
-                      color: AppTheme.primary)),
+                  child:
+                      CircularProgressIndicator(color: AppTheme.primary)),
               errorWidget: (_, __, ___) => const Center(
                   child: Icon(Icons.broken_image,
                       color: Colors.white54, size: 48)),
             ),
 
-            // Top gradient
+            // ── Top gradient ───────────────────────────────────────────
             Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
+              top: 0, left: 0, right: 0,
               child: Container(
-                height: 120,
+                height: 140,
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Colors.black54, Colors.transparent],
+                    colors: [Colors.black87, Colors.transparent],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),
@@ -516,11 +684,25 @@ class _StoryViewerState extends State<_StoryViewer>
               ),
             ),
 
-            // Progress bars
+            // ── Bottom gradient ────────────────────────────────────────
+            Positioned(
+              bottom: 0, left: 0, right: 0,
+              child: Container(
+                height: 180,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.transparent, Colors.black87],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Progress bars ──────────────────────────────────────────
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
-              left: 10,
-              right: 10,
+              left: 10, right: 10,
               child: Row(
                 children: List.generate(widget.stories.length, (i) {
                   return Expanded(
@@ -530,20 +712,21 @@ class _StoryViewerState extends State<_StoryViewer>
                         borderRadius: BorderRadius.circular(2),
                         child: i == _index
                             ? AnimatedBuilder(
-                          animation: _progress,
-                          builder: (_, __) => LinearProgressIndicator(
-                            value: _progress.value,
-                            backgroundColor: Colors.white38,
-                            color: Colors.white,
-                            minHeight: 2.5,
-                          ),
-                        )
+                                animation: _progress,
+                                builder: (_, __) =>
+                                    LinearProgressIndicator(
+                                  value: _progress.value,
+                                  backgroundColor: Colors.white38,
+                                  color: Colors.white,
+                                  minHeight: 2.5,
+                                ),
+                              )
                             : LinearProgressIndicator(
-                          value: i < _index ? 1.0 : 0.0,
-                          backgroundColor: Colors.white38,
-                          color: Colors.white,
-                          minHeight: 2.5,
-                        ),
+                                value: i < _index ? 1.0 : 0.0,
+                                backgroundColor: Colors.white38,
+                                color: Colors.white,
+                                minHeight: 2.5,
+                              ),
                       ),
                     ),
                   );
@@ -551,11 +734,10 @@ class _StoryViewerState extends State<_StoryViewer>
               ),
             ),
 
-            // User info header
+            // ── User header ────────────────────────────────────────────
             Positioned(
               top: MediaQuery.of(context).padding.top + 22,
-              left: 14,
-              right: 14,
+              left: 14, right: 14,
               child: Row(
                 children: [
                   CircleAvatar(
@@ -566,24 +748,43 @@ class _StoryViewerState extends State<_StoryViewer>
                         : null,
                     child: story.userAvatar.isEmpty
                         ? const Text('🐝',
-                        style: TextStyle(fontSize: 14))
+                            style: TextStyle(fontSize: 14))
                         : null,
                   ),
                   const SizedBox(width: 10),
-                  Text(
-                    story.username,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(story.username,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14)),
+                        Text(_timeAgo(story.createdAt),
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 11)),
+                      ],
+                    ),
                   ),
+                  // Delete button (own story only)
+                  if (isOwn)
+                    GestureDetector(
+                      onTap: () async {
+                        await widget.onDelete(story.id);
+                        if (mounted) Navigator.pop(context);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black45,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.delete_outline_rounded,
+                            color: Colors.redAccent, size: 20),
+                      ),
+                    ),
                   const SizedBox(width: 8),
-                  Text(
-                    _timeAgo(story.createdAt),
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 12),
-                  ),
-                  const Spacer(),
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
                     child: const Icon(Icons.close_rounded,
@@ -592,6 +793,144 @@ class _StoryViewerState extends State<_StoryViewer>
                 ],
               ),
             ),
+
+            // ── Caption ────────────────────────────────────────────────
+            if (story.caption.isNotEmpty)
+              Positioned(
+                bottom: _showReply ? 100 : 80,
+                left: 16, right: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    story.caption,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.4),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+
+            // ── Views count (own story) ────────────────────────────────
+            if (isOwn)
+              Positioned(
+                bottom: 30, left: 16,
+                child: StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('stories')
+                      .doc(story.id)
+                      .snapshots(),
+                  builder: (context, snap) {
+                    final views = snap.hasData && snap.data!.exists
+                        ? ((snap.data!.data()
+                                as Map<String, dynamic>)['viewedBy']
+                            as List?)
+                            ?.length ?? 0
+                        : 0;
+                    return Row(
+                      children: [
+                        const Icon(Icons.remove_red_eye_outlined,
+                            color: Colors.white70, size: 16),
+                        const SizedBox(width: 4),
+                        Text('$views view${views == 1 ? '' : 's'}',
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12)),
+                      ],
+                    );
+                  },
+                ),
+              ),
+
+            // ── Reply bar (other users' stories) ──────────────────────
+            if (!isOwn)
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 12, right: 12, top: 8,
+                    bottom:
+                        MediaQuery.of(context).viewInsets.bottom + 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() => _showReply = true);
+                            _progress.stop();
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white12,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                  color: Colors.white38, width: 1),
+                            ),
+                            child: _showReply
+                                ? TextField(
+                                    controller: _replyCtrl,
+                                    autofocus: true,
+                                    style: const TextStyle(
+                                        color: Colors.white),
+                                    decoration: InputDecoration(
+                                      hintText:
+                                          'Reply to ${story.username}…',
+                                      hintStyle: const TextStyle(
+                                          color: Colors.white54),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                    onSubmitted: (v) => _sendReply(v),
+                                  )
+                                : Text(
+                                    'Reply to ${story.username}…',
+                                    style: const TextStyle(
+                                        color: Colors.white54,
+                                        fontSize: 14),
+                                  ),
+                          ),
+                        ),
+                      ),
+                      if (_showReply) ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () =>
+                              _sendReply(_replyCtrl.text),
+                          child: Container(
+                            width: 44, height: 44,
+                            decoration: const BoxDecoration(
+                              color: AppTheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.send_rounded,
+                                color: Colors.black, size: 20),
+                          ),
+                        ),
+                      ] else ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () async {
+                            // Quick emoji react
+                            await _sendReply('❤️');
+                          },
+                          child: const Text('❤️',
+                              style: TextStyle(fontSize: 28)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -604,6 +943,7 @@ class _StoryViewerState extends State<_StoryViewer>
     return '${diff.inHours}h ago';
   }
 }
+
 
 // ─── Post Card ────────────────────────────────────────────────────────────────
 
@@ -667,6 +1007,16 @@ class _PostCardState extends State<_PostCard>
     _heartAnim.forward(from: 0).then((_) {
       if (mounted) setState(() => _showHeart = false);
     });
+  }
+
+  void _openProfile(BuildContext context) {
+    if (widget.post.uid.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(uid: widget.post.uid),
+      ),
+    );
   }
 
   void _showMore(BuildContext context) {
@@ -745,30 +1095,36 @@ class _PostCardState extends State<_PostCard>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. Header
+          // 1. Header — tap avatar or name to visit profile
           ListTile(
             contentPadding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-            leading: Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: AppTheme.primary, width: 2),
-              ),
-              child: CircleAvatar(
-                radius: 19,
-                backgroundColor: AppTheme.surfaceBg,
-                backgroundImage: widget.post.userAvatar.isNotEmpty
-                    ? NetworkImage(widget.post.userAvatar)
-                    : null,
-                child: widget.post.userAvatar.isEmpty
-                    ? const Text('🐝', style: TextStyle(fontSize: 16))
-                    : null,
+            leading: GestureDetector(
+              onTap: () => _openProfile(context),
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppTheme.primary, width: 2),
+                ),
+                child: CircleAvatar(
+                  radius: 19,
+                  backgroundColor: AppTheme.surfaceBg,
+                  backgroundImage: widget.post.userAvatar.isNotEmpty
+                      ? NetworkImage(widget.post.userAvatar)
+                      : null,
+                  child: widget.post.userAvatar.isEmpty
+                      ? const Text('🐝', style: TextStyle(fontSize: 16))
+                      : null,
+                ),
               ),
             ),
-            title: Text(
-              widget.post.username,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w700, fontSize: 14),
+            title: GestureDetector(
+              onTap: () => _openProfile(context),
+              child: Text(
+                widget.post.username,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 14),
+              ),
             ),
             subtitle: Text(
               FeedService.timeAgo(widget.post.createdAt),

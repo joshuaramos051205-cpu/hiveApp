@@ -3,18 +3,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Post {
-  final String id;           // Firestore doc ID
-  final String uid;          // author UID
-  final String username;
-  final String userAvatar;
-  final String imageUrl;
-  final String? videoUrl;
-  final String caption;
-  final int likes;
-  final List<String> likedBy;
-  final int commentsCount;
-  final List<String> mediaUrls;
+  final String id, uid, username, userAvatar, imageUrl, caption;
+  final int likes, commentsCount;
+  final List<String> likedBy, mediaUrls;
   final DateTime? createdAt;
+  final String? videoUrl;
 
   Post({
     required this.id,
@@ -22,41 +15,47 @@ class Post {
     required this.username,
     required this.userAvatar,
     required this.imageUrl,
-    this.videoUrl,
     required this.caption,
     required this.likes,
     required this.likedBy,
     required this.commentsCount,
     required this.mediaUrls,
     this.createdAt,
+    this.videoUrl,
   });
 
-  /// Build from a Firestore document
+  static bool isVideoUrl(String url) => url.toLowerCase().contains('.mp4');
+
   factory Post.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
-    final uid = d['uid'] as String? ?? '';
-    final id = doc.id;
-    final mediaUrls = List<String>.from(d['mediaUrls'] ?? []);
-
+    final urls = List<String>.from(d['mediaUrls'] ?? []);
     return Post(
-      id: id,
-      uid: uid,
-      username: d['displayName'] as String? ?? 'HiVE User',
-      userAvatar: d['photoUrl'] as String? ?? '',
-      // Use first media URL as image; fallback to a deterministic picsum
-      imageUrl: mediaUrls.isNotEmpty
-          ? mediaUrls.first
-          : 'https://picsum.photos/seed/$id/600/600',
-      videoUrl: null, // wire up when Storage video URLs are added
-      caption: d['text'] as String? ?? '',
-      likes: (d['likes'] as num?)?.toInt() ?? 0,
+      id: doc.id,
+      uid: d['uid'] ?? '',
+      username: d['displayName'] ?? 'HiVE User',
+      userAvatar: d['photoUrl'] ?? '',
+      imageUrl: urls.isNotEmpty ? urls.first : '',
+      caption: d['text'] ?? '',
+      likes: d['likes'] ?? 0,
       likedBy: List<String>.from(d['likedBy'] ?? []),
-      commentsCount: (d['commentsCount'] as num?)?.toInt() ?? 0,
-      mediaUrls: mediaUrls,
+      commentsCount: d['commentsCount'] ?? 0,
+      mediaUrls: urls,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
     );
   }
 }
+
+// class Comment {
+//   final String id, text, username, userAvatar;
+//   final DateTime? createdAt;
+//   Comment(
+//       {required this.id,
+//       required this.text,
+//       required this.uid,
+//       required this.username,
+//       required this.userAvatar,
+//       this.createdAt});
+// }
 
 // ─── Comment model ────────────────────────────────────────────────────────────
 

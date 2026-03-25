@@ -8,9 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import '../core/app_theme.dart';
 import '../social/notification_service.dart';
+import '../feed/feed_service.dart';
 
 class CreateScreen extends StatefulWidget {
   const CreateScreen({super.key});
@@ -67,7 +67,7 @@ class _CreateScreenState extends State<CreateScreen>
 
   // ── @mention suggestion logic ─────────────────────────────────────────────
   void _onTextChanged() {
-    setState(() {}); // rebuild for char count + highlighting
+    setState(() {});
 
     final text = _controller.text;
     final cursor = _controller.selection.baseOffset;
@@ -76,7 +76,6 @@ class _CreateScreenState extends State<CreateScreen>
       return;
     }
 
-    // Find if cursor is right after an @word
     final before = text.substring(0, cursor);
     final match = RegExp(r'@(\w*)$').firstMatch(before);
 
@@ -90,17 +89,18 @@ class _CreateScreenState extends State<CreateScreen>
 
   Future<void> _searchUsers(String query) async {
     if (query.isEmpty) {
-      // Show recent/all users when just "@" is typed
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .limit(5)
-          .get();
+      final snap =
+          await FirebaseFirestore.instance.collection('users').limit(5).get();
       final myUid = FirebaseAuth.instance.currentUser?.uid;
       final results = snap.docs
           .where((d) => d.id != myUid)
           .map((d) => {'uid': d.id, 'name': d['name'] ?? 'User'})
           .toList();
-      if (mounted) setState(() { _mentionSuggestions = results; _showSuggestions = results.isNotEmpty; });
+      if (mounted)
+        setState(() {
+          _mentionSuggestions = results;
+          _showSuggestions = results.isNotEmpty;
+        });
       return;
     }
 
@@ -127,11 +127,13 @@ class _CreateScreenState extends State<CreateScreen>
 
   void _hideSuggestions() {
     if (_showSuggestions || _mentionSuggestions.isNotEmpty) {
-      setState(() { _showSuggestions = false; _mentionSuggestions = []; });
+      setState(() {
+        _showSuggestions = false;
+        _mentionSuggestions = [];
+      });
     }
   }
 
-  // Insert the selected mention into the text
   void _insertMention(String name) {
     final text = _controller.text;
     final cursor = _controller.selection.baseOffset;
@@ -140,7 +142,6 @@ class _CreateScreenState extends State<CreateScreen>
     final before = text.substring(0, cursor);
     final after = text.substring(cursor);
 
-    // Replace the partial @word with the full @name
     final newBefore = before.replaceAllMapped(
       RegExp(r'@(\w*)$'),
       (_) => '@$name ',
@@ -165,12 +166,13 @@ class _CreateScreenState extends State<CreateScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Text('Discard buzz?',
             style: TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w800, fontSize: 17)),
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 17)),
         content: const Text('If you leave, your buzz will be discarded.',
             style: TextStyle(
                 color: AppTheme.textSecondary, fontSize: 14, height: 1.5)),
-        actionsPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         actions: [
           SizedBox(
             width: double.infinity,
@@ -247,65 +249,6 @@ class _CreateScreenState extends State<CreateScreen>
     });
   }
 
-  // ── Upload media ──────────────────────────────────────────────────────────
-  Future<List<String>> _uploadMedia(String buzzId) async {
-    final urls = <String>[];
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-
-    for (int i = 0; i < _mediaFiles.length; i++) {
-      final pf = _mediaFiles[i];
-      final ext = (pf.extension ?? 'jpg').toLowerCase();
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$i.$ext';
-
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('buzzes')
-          .child(uid)
-          .child(buzzId)
-          .child(fileName);
-
-      UploadTask uploadTask;
-
-      if (kIsWeb || pf.bytes != null) {
-        final bytes = pf.bytes ?? await File(pf.path!).readAsBytes();
-        uploadTask = ref.putData(bytes,
-            SettableMetadata(contentType: _mimeType(ext)));
-      } else {
-        uploadTask = ref.putFile(File(pf.path!));
-      }
-
-      uploadTask.snapshotEvents.listen((snap) {
-        final progress =
-            snap.bytesTransferred / (snap.totalBytes == 0 ? 1 : snap.totalBytes);
-        if (mounted) {
-          setState(() {
-            if (i < _uploadProgress.length) _uploadProgress[i] = progress;
-          });
-        }
-      });
-
-      await uploadTask;
-      final url = await ref.getDownloadURL();
-      urls.add(url);
-    }
-
-    return urls;
-  }
-
-  String _mimeType(String ext) {
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg': return 'image/jpeg';
-      case 'png':  return 'image/png';
-      case 'gif':  return 'image/gif';
-      case 'webp': return 'image/webp';
-      case 'mp4':  return 'video/mp4';
-      case 'mov':  return 'video/quicktime';
-      case 'webm': return 'video/webm';
-      default:     return 'application/octet-stream';
-    }
-  }
-
   bool _isVideo(String ext) =>
       ['mp4', 'mov', 'avi', 'mkv', 'webm'].contains(ext);
 
@@ -321,10 +264,10 @@ class _CreateScreenState extends State<CreateScreen>
         children: [
           const SizedBox(height: 10),
           Container(
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2)),
+                color: Colors.white24, borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 16),
           const Padding(
@@ -346,15 +289,12 @@ class _CreateScreenState extends State<CreateScreen>
                     : option == 'Followers'
                         ? Icons.people_rounded
                         : Icons.lock_rounded,
-                color: _audience == option
-                    ? AppTheme.primary
-                    : Colors.white54,
+                color: _audience == option ? AppTheme.primary : Colors.white54,
               ),
               title: Text(option,
                   style: TextStyle(
-                      color: _audience == option
-                          ? AppTheme.primary
-                          : Colors.white,
+                      color:
+                          _audience == option ? AppTheme.primary : Colors.white,
                       fontWeight: FontWeight.w600)),
               trailing: _audience == option
                   ? const Icon(Icons.check_rounded, color: AppTheme.primary)
@@ -372,80 +312,21 @@ class _CreateScreenState extends State<CreateScreen>
 
   // ── Post ──────────────────────────────────────────────────────────────────
   Future<void> _handlePost() async {
-    if (_isEmpty || _isOverLimit || _isPosting) return;
-    _focusNode.unfocus();
-    _hideSuggestions();
-    HapticFeedback.mediumImpact();
+    if (_isEmpty || _isOverLimit) return;
 
-    setState(() => _isPosting = true);
-    _progressAnim.repeat();
+    final String text = _controller.text.trim();
+    final List<PlatformFile> files = List.from(_mediaFiles);
 
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception('You must be signed in to post.');
+    HapticFeedback.lightImpact();
+    Navigator.of(context).pop(); // Isara agad
 
-      final docRef = FirebaseFirestore.instance.collection('buzzes').doc();
-
-      List<String> mediaUrls = [];
-      if (_mediaFiles.isNotEmpty) {
-        mediaUrls = await _uploadMedia(docRef.id);
-      }
-
-      final captionText = _controller.text.trim();
-
-      await docRef.set({
-        'uid': user.uid,
-        'displayName': user.displayName ?? 'HiVE User',
-        'photoUrl': user.photoURL ?? '',
-        'text': captionText,
-        'audience': _audience,
-        'mediaCount': mediaUrls.length,
-        'mediaUrls': mediaUrls,
-        'likes': 0,
-        'likedBy': [],
-        'comments': 0,
-        'commentsCount': 0,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      // ── Send @mention notifications after post is saved ────────────────
-      await NotificationService.sendMentionNotifications(
-        text: captionText,
-        postId: docRef.id,
-        postImageUrl: mediaUrls.isNotEmpty ? mediaUrls.first : null,
-      );
-
-      _progressAnim.stop();
-      if (!mounted) return;
-
-      HapticFeedback.lightImpact();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(children: [
-            Text('🐝', style: TextStyle(fontSize: 16)),
-            SizedBox(width: 10),
-            Text('Buzz posted!',
-                style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w700)),
-          ]),
-          backgroundColor: const Color(0xFF1E1E1E),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14)),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-
-      Navigator.of(context).pop(true);
-    } on FirebaseException catch (e) {
-      _progressAnim.stop();
-      _showError(e.message ?? 'Something went wrong. Try again.');
-    } catch (e) {
-      _progressAnim.stop();
-      _showError(e.toString());
-    } finally {
-      if (mounted) setState(() => _isPosting = false);
-    }
+    // Tawagin ang service
+    FeedService.uploadBuzzFast(
+      text: text,
+      audience: _audience,
+      files: files,
+      onProgress: (_) {},
+    );
   }
 
   void _showError(String msg) {
@@ -513,8 +394,8 @@ class _CreateScreenState extends State<CreateScreen>
           backgroundColor: AppTheme.scaffoldBg,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.close_rounded,
-                color: Colors.white, size: 26),
+            icon:
+                const Icon(Icons.close_rounded, color: Colors.white, size: 26),
             onPressed: () async {
               if (await _confirmDiscard()) Navigator.of(context).pop();
             },
@@ -533,8 +414,8 @@ class _CreateScreenState extends State<CreateScreen>
                       ? null
                       : _handlePost,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                     decoration: BoxDecoration(
                       color: AppTheme.primary,
                       borderRadius: BorderRadius.circular(22),
@@ -561,10 +442,7 @@ class _CreateScreenState extends State<CreateScreen>
         body: Column(
           children: [
             const Divider(height: 1, color: AppTheme.dividerColor),
-
-            if (_isPosting && _mediaFiles.isNotEmpty)
-              _buildUploadProgress(),
-
+            if (_isPosting && _mediaFiles.isNotEmpty) _buildUploadProgress(),
             Expanded(
               child: SingleChildScrollView(
                 controller: _scrollController,
@@ -636,10 +514,9 @@ class _CreateScreenState extends State<CreateScreen>
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 10, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: AppTheme.primary
-                                            .withOpacity(0.15),
-                                        borderRadius:
-                                            BorderRadius.circular(12),
+                                        color:
+                                            AppTheme.primary.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
                                             color: AppTheme.primary
                                                 .withOpacity(0.4),
@@ -652,12 +529,10 @@ class _CreateScreenState extends State<CreateScreen>
                                               style: const TextStyle(
                                                   color: AppTheme.primary,
                                                   fontSize: 11,
-                                                  fontWeight:
-                                                      FontWeight.w700)),
+                                                  fontWeight: FontWeight.w700)),
                                           const SizedBox(width: 3),
                                           const Icon(
-                                              Icons
-                                                  .keyboard_arrow_down_rounded,
+                                              Icons.keyboard_arrow_down_rounded,
                                               color: AppTheme.primary,
                                               size: 13),
                                         ],
@@ -690,12 +565,11 @@ class _CreateScreenState extends State<CreateScreen>
                                 ),
                               ),
 
-                              // ── @mention text preview with colors ─────────
                               if (_controller.text.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),
-                                  child: _MentionPreview(
-                                      text: _controller.text),
+                                  child:
+                                      _MentionPreview(text: _controller.text),
                                 ),
                             ],
                           ),
@@ -710,8 +584,7 @@ class _CreateScreenState extends State<CreateScreen>
                         decoration: BoxDecoration(
                           color: AppTheme.cardBg,
                           borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: AppTheme.dividerColor),
+                          border: Border.all(color: AppTheme.dividerColor),
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -723,12 +596,9 @@ class _CreateScreenState extends State<CreateScreen>
                                 radius: 16,
                                 backgroundColor: AppTheme.surfaceBg,
                                 child: Text(
-                                  name.isNotEmpty
-                                      ? name[0].toUpperCase()
-                                      : '?',
+                                  name.isNotEmpty ? name[0].toUpperCase() : '?',
                                   style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12),
+                                      color: Colors.white, fontSize: 12),
                                 ),
                               ),
                               title: Text('@$name',
@@ -752,7 +622,6 @@ class _CreateScreenState extends State<CreateScreen>
                 ),
               ),
             ),
-
             _buildBottomBar(),
           ],
         ),
@@ -815,9 +684,7 @@ class _CreateScreenState extends State<CreateScreen>
     }
     if (count == 3) {
       return Row(children: [
-        Expanded(
-            flex: 2,
-            child: _mediaThumb(_mediaFiles[0], 0, height: 200)),
+        Expanded(flex: 2, child: _mediaThumb(_mediaFiles[0], 0, height: 200)),
         const SizedBox(width: 3),
         Expanded(
           child: Column(children: [
@@ -939,8 +806,7 @@ class _CreateScreenState extends State<CreateScreen>
           decoration: BoxDecoration(
             color: AppTheme.scaffoldBg,
             border: Border(
-                top: BorderSide(
-                    color: AppTheme.dividerColor, width: 0.8)),
+                top: BorderSide(color: AppTheme.dividerColor, width: 0.8)),
           ),
           padding: EdgeInsets.only(
             left: 16,
@@ -986,12 +852,11 @@ class _CreateScreenState extends State<CreateScreen>
                 ],
               ),
               const SizedBox(width: 4),
-              _ToolbarIcon(
-                  icon: Icons.video_camera_back_outlined,
-                  label: 'Video',
-                  onTap: _isPosting ? () {} : _pickVideo),
-              const SizedBox(width: 4),
-              // Mention button — inserts @ and triggers suggestion
+              // _ToolbarIcon(
+              //     icon: Icons.video_camera_back_outlined,
+              //     label: 'Video',
+              //     onTap: _isPosting ? () {} : _pickVideo),
+              // const SizedBox(width: 4),
               _ToolbarIcon(
                   icon: Icons.alternate_email_rounded,
                   label: 'Mention',
@@ -1026,8 +891,8 @@ class _CreateScreenState extends State<CreateScreen>
       height: 72,
       decoration: BoxDecoration(
         color: AppTheme.surfaceBg,
-        border: Border(
-            top: BorderSide(color: AppTheme.dividerColor, width: 0.8)),
+        border:
+            Border(top: BorderSide(color: AppTheme.dividerColor, width: 0.8)),
       ),
       child: Row(
         children: [
@@ -1062,9 +927,7 @@ class _CreateScreenState extends State<CreateScreen>
                       ? Image.memory(bytes,
                           width: 52, height: 52, fit: BoxFit.cover)
                       : Container(
-                          width: 52,
-                          height: 52,
-                          color: AppTheme.surfaceBg);
+                          width: 52, height: 52, color: AppTheme.surfaceBg);
                 } else {
                   thumb = Image.file(File(pf.path!),
                       width: 52, height: 52, fit: BoxFit.cover);
@@ -1074,8 +937,7 @@ class _CreateScreenState extends State<CreateScreen>
                   alignment: Alignment.center,
                   children: [
                     ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: thumb),
+                        borderRadius: BorderRadius.circular(8), child: thumb),
                     if (_isPosting && progress < 1.0)
                       Container(
                         width: 52,
@@ -1126,8 +988,7 @@ class _CreateScreenState extends State<CreateScreen>
   }
 }
 
-// ─── Mention Preview — shows colored @mentions and #tags ─────────────────────
-// Displayed below the TextField as a read-only preview.
+// ─── Mention Preview ──────────────────────────────────────────────────────────
 
 class _MentionPreview extends StatelessWidget {
   final String text;
@@ -1169,7 +1030,7 @@ class _MentionPreview extends StatelessWidget {
     if (spans.every((s) =>
         s.style?.color == const Color(0xFFFFFFFF) ||
         s.style?.color == Colors.white70)) {
-      return const SizedBox.shrink(); // no highlights, don't show preview
+      return const SizedBox.shrink();
     }
 
     return RichText(text: TextSpan(children: spans));
@@ -1199,19 +1060,16 @@ class _ToolbarIcon extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color: active
-              ? AppTheme.primary.withOpacity(0.15)
-              : AppTheme.surfaceBg,
+          color:
+              active ? AppTheme.primary.withOpacity(0.15) : AppTheme.surfaceBg,
           borderRadius: BorderRadius.circular(20),
           border: active
-              ? Border.all(
-                  color: AppTheme.primary.withOpacity(0.5), width: 1)
+              ? Border.all(color: AppTheme.primary.withOpacity(0.5), width: 1)
               : null,
         ),
         child: Row(
           children: [
-            Icon(icon,
-                color: AppTheme.primary, size: 17),
+            Icon(icon, color: AppTheme.primary, size: 17),
             const SizedBox(width: 5),
             Text(label,
                 style: TextStyle(

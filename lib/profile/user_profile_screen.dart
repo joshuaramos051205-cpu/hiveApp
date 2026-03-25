@@ -7,6 +7,7 @@ import '../core/app_theme.dart';
 import '../social/follow_service.dart';
 import '../chat/chat_service.dart';
 import '../chat/user_chat_screen.dart';
+import '../feed/feed_service.dart';
 
 class UserProfileScreen extends StatelessWidget {
   final String uid;
@@ -20,10 +21,8 @@ class UserProfileScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg,
       body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .snapshots(),
+        stream:
+            FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -46,7 +45,6 @@ class UserProfileScreen extends StatelessWidget {
 
           return CustomScrollView(
             slivers: [
-              // ── Cover / App Bar ─────────────────────────────────────────
               SliverAppBar(
                 expandedHeight: 200,
                 pinned: true,
@@ -68,33 +66,28 @@ class UserProfileScreen extends StatelessWidget {
                             ),
                           ),
                           child: const Center(
-                              child: Text('🍯',
-                                  style: TextStyle(fontSize: 70))),
+                              child:
+                                  Text('🍯', style: TextStyle(fontSize: 70))),
                         ),
                 ),
               ),
-
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // ── Avatar ──────────────────────────────────────────
                       CircleAvatar(
                         radius: 50,
                         backgroundColor: AppTheme.surfaceBg,
-                        backgroundImage: photoUrl != null
-                            ? NetworkImage(photoUrl)
-                            : null,
+                        backgroundImage:
+                            photoUrl != null ? NetworkImage(photoUrl) : null,
                         child: photoUrl == null
-                            ? const Text('🐝',
-                                style: TextStyle(fontSize: 40))
+                            ? const Text('🐝', style: TextStyle(fontSize: 40))
                             : null,
                       ),
                       const SizedBox(height: 12),
-
                       Text(displayName,
                           style: const TextStyle(
                               fontSize: 22,
@@ -102,33 +95,26 @@ class UserProfileScreen extends StatelessWidget {
                               color: Colors.white)),
                       if (username.isNotEmpty)
                         Text('@$username',
-                            style: const TextStyle(
-                                color: AppTheme.textSecondary)),
+                            style:
+                                const TextStyle(color: AppTheme.textSecondary)),
                       const SizedBox(height: 8),
                       Text(bio,
                           textAlign: TextAlign.center,
-                          style:
-                              const TextStyle(color: Colors.white70)),
+                          style: const TextStyle(color: Colors.white70)),
                       const SizedBox(height: 16),
-
-                      // ── Stats — all real-time from Firestore ────────────
                       StreamBuilder<QuerySnapshot>(
                         stream: FirebaseFirestore.instance
                             .collection('buzzes')
                             .where('uid', isEqualTo: uid)
                             .snapshots(),
                         builder: (context, postSnap) {
-                          final postsCount =
-                              postSnap.data?.docs.length ?? 0;
+                          final postsCount = postSnap.data?.docs.length ?? 0;
                           return StreamBuilder<int>(
-                            stream:
-                                FollowService.followersCountStream(uid),
+                            stream: FollowService.followersCountStream(uid),
                             builder: (context, followersSnap) {
-                              final followersCount =
-                                  followersSnap.data ?? 0;
+                              final followersCount = followersSnap.data ?? 0;
                               return StreamBuilder<int>(
-                                stream: FollowService
-                                    .followingCountStream(uid),
+                                stream: FollowService.followingCountStream(uid),
                                 builder: (context, followingSnap) {
                                   final followingCount =
                                       followingSnap.data ?? 0;
@@ -137,8 +123,7 @@ class UserProfileScreen extends StatelessWidget {
                                         MainAxisAlignment.spaceAround,
                                     children: [
                                       _Stat(
-                                          label: 'Posts',
-                                          value: '$postsCount'),
+                                          label: 'Posts', value: '$postsCount'),
                                       _Stat(
                                           label: 'Followers',
                                           value: '$followersCount'),
@@ -153,10 +138,7 @@ class UserProfileScreen extends StatelessWidget {
                           );
                         },
                       ),
-
                       const SizedBox(height: 16),
-
-                      // ── Action buttons ──────────────────────────────────
                       if (isOwnProfile)
                         _ActionButton(
                           label: 'Edit Profile',
@@ -167,7 +149,6 @@ class UserProfileScreen extends StatelessWidget {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // Follow / Unfollow button
                             StreamBuilder<bool>(
                               stream: FollowService.isFollowingStream(uid),
                               builder: (context, snap) {
@@ -185,17 +166,14 @@ class UserProfileScreen extends StatelessWidget {
                               },
                             ),
                             const SizedBox(width: 12),
-                            // Message button
                             _ActionButton(
                               label: 'Message',
                               isPrimary: false,
                               onTap: () async {
-                                final name = data['name'] as String? ??
-                                    'User';
-                                final photo =
-                                    data['photoURL'] as String? ?? '';
-                                final chatId = await ChatService
-                                    .createOrGetChat(
+                                final name = data['name'] as String? ?? 'User';
+                                final photo = data['photoURL'] as String? ?? '';
+                                final chatId =
+                                    await ChatService.createOrGetChat(
                                   otherUserId: uid,
                                   otherUserName: name,
                                   otherUserPhoto: photo,
@@ -220,8 +198,6 @@ class UserProfileScreen extends StatelessWidget {
                   ),
                 ),
               ),
-
-              // ── Posts grid ──────────────────────────────────────────────
               SliverPadding(
                 padding: const EdgeInsets.all(2),
                 sliver: StreamBuilder<QuerySnapshot>(
@@ -244,8 +220,8 @@ class UserProfileScreen extends StatelessWidget {
                           padding: EdgeInsets.all(20),
                           child: Center(
                             child: Text('No posts yet 🐝',
-                                style: TextStyle(
-                                    color: AppTheme.textSecondary)),
+                                style:
+                                    TextStyle(color: AppTheme.textSecondary)),
                           ),
                         ),
                       );
@@ -260,13 +236,21 @@ class UserProfileScreen extends StatelessWidget {
                       ),
                       delegate: SliverChildBuilderDelegate(
                         (context, i) {
-                          final post = docs[i].data()
-                              as Map<String, dynamic>;
-                          final mediaUrls = List<String>.from(
-                              post['mediaUrls'] ?? []);
+                          final doc = docs[i];
+                          final post = doc.data() as Map<String, dynamic>;
+                          final mediaUrls =
+                              List<String>.from(post['mediaUrls'] ?? []);
 
                           return GestureDetector(
-                            onTap: () {},
+                            onTap: () {
+                              // PAGPININDOT: Pupunta sa Detail Screen
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => _PostDetailScreen(doc: doc),
+                                ),
+                              );
+                            },
                             child: mediaUrls.isNotEmpty
                                 ? Image.network(mediaUrls.first,
                                     fit: BoxFit.cover)
@@ -288,6 +272,91 @@ class UserProfileScreen extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+// ─── Post Detail Screen (Internal para clickable ang posts) ───────────────
+
+class _PostDetailScreen extends StatefulWidget {
+  final QueryDocumentSnapshot doc;
+  const _PostDetailScreen({required this.doc});
+
+  @override
+  State<_PostDetailScreen> createState() => _PostDetailScreenState();
+}
+
+class _PostDetailScreenState extends State<_PostDetailScreen> {
+  bool _liked = false;
+  late Map<String, dynamic> data;
+
+  @override
+  void initState() {
+    super.initState();
+    data = widget.doc.data() as Map<String, dynamic>;
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final likedBy = List<String>.from(data['likedBy'] ?? []);
+    _liked = likedBy.contains(currentUid);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaUrls = List<String>.from(data['mediaUrls'] ?? []);
+    final text = data['text'] as String? ?? '';
+    final likes = data['likes'] as int? ?? 0;
+    final displayName = data['displayName'] as String? ?? 'HiVE User';
+    final photoUrl = data['photoUrl'] as String? ?? '';
+
+    return Scaffold(
+      backgroundColor: AppTheme.scaffoldBg,
+      appBar: AppBar(
+        backgroundColor: AppTheme.scaffoldBg,
+        title:
+            const Text('Buzz', style: TextStyle(fontWeight: FontWeight.w800)),
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              leading: CircleAvatar(
+                backgroundImage:
+                    photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                child: photoUrl.isEmpty ? const Text('🐝') : null,
+              ),
+              title: Text(displayName,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+              subtitle: const Text('Just now',
+                  style:
+                      TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+            ),
+            if (text.isNotEmpty)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(text,
+                    style: const TextStyle(color: Colors.white, fontSize: 15)),
+              ),
+            if (mediaUrls.isNotEmpty)
+              ...mediaUrls.map((url) => Image.network(url,
+                  width: double.infinity, fit: BoxFit.cover)),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(_liked ? Icons.favorite : Icons.favorite_border,
+                      color: _liked ? AppTheme.primary : Colors.white),
+                  const SizedBox(width: 8),
+                  Text('$likes likes',
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -322,12 +391,9 @@ class _FollowButtonState extends State<_FollowButton> {
             },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
         decoration: BoxDecoration(
-          color: widget.isFollowing
-              ? AppTheme.surfaceBg
-              : AppTheme.primary,
+          color: widget.isFollowing ? AppTheme.surfaceBg : AppTheme.primary,
           borderRadius: BorderRadius.circular(12),
           border: widget.isFollowing
               ? Border.all(color: AppTheme.dividerColor)
@@ -343,9 +409,7 @@ class _FollowButtonState extends State<_FollowButton> {
             : Text(
                 widget.isFollowing ? 'Following' : 'Follow',
                 style: TextStyle(
-                  color: widget.isFollowing
-                      ? Colors.white
-                      : Colors.black,
+                  color: widget.isFollowing ? Colors.white : Colors.black,
                   fontWeight: FontWeight.w800,
                   fontSize: 14,
                 ),
@@ -373,8 +437,8 @@ class _Stat extends StatelessWidget {
                 fontSize: 16)),
         const SizedBox(height: 2),
         Text(label,
-            style: const TextStyle(
-                color: AppTheme.textSecondary, fontSize: 12)),
+            style:
+                const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
       ],
     );
   }
@@ -385,23 +449,18 @@ class _ActionButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool isPrimary;
   const _ActionButton(
-      {required this.label,
-      required this.onTap,
-      this.isPrimary = false});
+      {required this.label, required this.onTap, this.isPrimary = false});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         decoration: BoxDecoration(
           color: isPrimary ? AppTheme.primary : AppTheme.surfaceBg,
           borderRadius: BorderRadius.circular(12),
-          border: isPrimary
-              ? null
-              : Border.all(color: AppTheme.dividerColor),
+          border: isPrimary ? null : Border.all(color: AppTheme.dividerColor),
         ),
         child: Text(label,
             style: TextStyle(

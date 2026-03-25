@@ -1,120 +1,168 @@
-// feed/feed_service.dart
-
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:video_compress/video_compress.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'post_model.dart';
+import 'upload_notifier.dart';
 import '../social/notification_service.dart';
+import 'package:uuid/uuid.dart';
+import 'dart:async';
+import 'package:path_provider/path_provider.dart';
+import 'dart:convert';
 
 class FeedService {
-  static final _db = FirebaseFirestore.instance;
+  static final List<Post> _localPosts = [];
+
+  // Storage para sa comments: Key ay buzzId, Value ay List ng Comments
+  static final Map<String, List<Comment>> _localComments = {};
+
+  static final _streamController = StreamController<List<Post>>.broadcast();
+  static final _commentsController =
+      StreamController<Map<String, List<Comment>>>.broadcast();
 
   static Stream<List<Post>> feedStream() {
-    return _db
-        .collection('buzzes')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snap) => snap.docs.map(Post.fromFirestore).toList());
-  }
-
-  static Future<void> toggleLike(String buzzId) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final ref = _db.collection('buzzes').doc(buzzId);
-    String? postOwnerUid;
-    String? postImageUrl;
-    bool justLiked = false;
-    await _db.runTransaction((tx) async {
-      final snap = await tx.get(ref);
-      if (!snap.exists) return;
-      final likedBy = List<String>.from(snap['likedBy'] ?? []);
-      final alreadyLiked = likedBy.contains(uid);
-      if (alreadyLiked) {
-        likedBy.remove(uid);
-        justLiked = false;
-      } else {
-        likedBy.add(uid);
-        justLiked = true;
-        postOwnerUid = snap['uid'] as String?;
-        final mediaUrls = List<String>.from(snap['mediaUrls'] ?? []);
-        postImageUrl = mediaUrls.isNotEmpty ? mediaUrls.first : null;
-      }
-      tx.update(ref, {'likedBy': likedBy, 'likes': likedBy.length});
+    Timer(const Duration(milliseconds: 500), () {
+      if (!_streamController.isClosed)
+        _streamController.add(List.from(_localPosts));
     });
-    if (justLiked && postOwnerUid != null && postOwnerUid != uid) {
-      await NotificationService.sendLikeNotification(
-          targetUid: postOwnerUid!, postId: buzzId, postImageUrl: postImageUrl);
+    return _streamController.stream;
+  }
+
+  static Future<void> uploadBuzzFast({
+    required String text,
+    required String audience,
+    required List<PlatformFile> files,
+    required Function(double) onProgress,
+  }) async {
+    final notifier = UploadNotifier.instance;
+    final user = FirebaseAuth.instance.currentUser; // Identity mo
+    final String postId = DateTime.now().millisecondsSinceEpoch.toString();
+
+    notifier.start(files.isEmpty ? 'Posting...' : 'Saving files...');
+
+    try {
+      List<String> savedPaths = [];
+      for (int i = 0; i < files.length; i++) {
+        final file = files[i];
+        if (kIsWeb) {
+          if (file.bytes != null) {
+            String base64String = base64Encode(file.bytes!);
+            savedPaths.add(
+                'data:image/${file.extension ?? 'jpg'};base64,$base64String');
+          }
+        } else {
+          if (file.path != null) {
+            final Directory directory =
+                await getApplicationDocumentsDirectory();
+            final String newPath =
+                '${directory.path}/buzz_${postId}_$i.${file.extension ?? 'jpg'}';
+            await File(file.path!).copy(newPath);
+            savedPaths.add(newPath);
+          }
+        }
+        notifier.updateProgress((i + 1) / files.length);
+      }
+
+      final newPost = Post(
+        id: postId,
+        uid: user?.uid ?? "user_me",
+        username: user?.displayName ?? "HiVE User",
+        userAvatar: user?.photoURL ?? "",
+        imageUrl: savedPaths.isNotEmpty ? savedPaths.first : '',
+        mediaUrls: savedPaths,
+        caption: text,
+        likes: 0,
+        likedBy: [],
+        commentsCount: 0,
+        createdAt: DateTime.now(),
+      );
+
+      _localPosts.insert(0, newPost);
+      _streamController.add(List.from(_localPosts));
+      notifier.finish();
+    } catch (e) {
+      notifier.fail();
     }
   }
 
-  static Future<void> toggleSave(String buzzId) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final ref = _db.collection('users').doc(uid).collection('saved').doc(buzzId);
-    final snap = await ref.get();
-    if (snap.exists) {
-      await ref.delete();
-    } else {
-      await ref.set({'savedAt': FieldValue.serverTimestamp()});
-    }
-  }
-
-  static Stream<bool> isSavedStream(String buzzId) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return Stream.value(false);
-    return _db.collection('users').doc(uid).collection('saved').doc(buzzId)
-        .snapshots().map((snap) => snap.exists);
-  }
+  // --- COMMENT LOGIC (FIXED) ---
 
   static Stream<List<Comment>> commentsStream(String buzzId) {
-    return _db.collection('buzzes').doc(buzzId).collection('comments')
-        .orderBy('createdAt', descending: false)
-        .snapshots()
-        .map((snap) => snap.docs.map(Comment.fromFirestore).toList());
+    // Nag-e-emit ng bagong listahan tuwing may mag-co-comment
+    return _commentsController.stream.map((map) => map[buzzId] ?? []);
   }
 
   static Future<void> addComment(String buzzId, String text) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null || text.trim().isEmpty) return;
-    final buzzRef = _db.collection('buzzes').doc(buzzId);
-    final commentRef = buzzRef.collection('comments').doc();
-    final buzzSnap = await buzzRef.get();
-    final postOwnerUid = buzzSnap.data()?['uid'] as String?;
-    final mediaUrls = List<String>.from(buzzSnap.data()?['mediaUrls'] ?? []);
-    final postImageUrl = mediaUrls.isNotEmpty ? mediaUrls.first : null;
-    final batch = _db.batch();
-    batch.set(commentRef, {
-      'uid': user.uid,
-      'displayName': user.displayName ?? 'HiVE User',
-      'photoUrl': user.photoURL ?? '',
-      'text': text.trim(),
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    batch.update(buzzRef, {'commentsCount': FieldValue.increment(1)});
-    await batch.commit();
-    if (postOwnerUid != null && postOwnerUid != user.uid) {
-      await NotificationService.sendCommentNotification(
-          targetUid: postOwnerUid, postId: buzzId,
-          commentText: text.trim(), postImageUrl: postImageUrl);
+    final String commentId = DateTime.now().millisecondsSinceEpoch.toString();
+
+    final newComment = Comment(
+      id: commentId,
+      uid: user?.uid ?? "user_me",
+      username: user?.displayName ?? "HiVE User",
+      userAvatar: user?.photoURL ?? "",
+      text: text,
+      createdAt: DateTime.now(),
+    );
+
+    // 1. I-save ang comment sa local map
+    if (_localComments[buzzId] == null) {
+      _localComments[buzzId] = [];
+    }
+    _localComments[buzzId]!.add(newComment);
+    _commentsController.add(Map.from(_localComments));
+
+    // 2. I-update ang commentsCount ng Post sa listahan
+    final postIdx = _localPosts.indexWhere((p) => p.id == buzzId);
+    if (postIdx != -1) {
+      final p = _localPosts[postIdx];
+      _localPosts[postIdx] = Post(
+        id: p.id, uid: p.uid, username: p.username, userAvatar: p.userAvatar,
+        imageUrl: p.imageUrl, mediaUrls: p.mediaUrls, caption: p.caption,
+        likes: p.likes, likedBy: p.likedBy,
+        commentsCount: _localComments[buzzId]!.length, // Update count
+        createdAt: p.createdAt,
+      );
+      _streamController.add(List.from(_localPosts));
     }
   }
 
-  static Future<void> deletePost(String buzzId) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final ref = _db.collection('buzzes').doc(buzzId);
-    final snap = await ref.get();
-    if (snap.exists && snap['uid'] == uid) await ref.delete();
+  // --- LIKE LOGIC (FIXED) ---
+  static Future<void> toggleLike(String buzzId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? "user_me";
+    final idx = _localPosts.indexWhere((p) => p.id == buzzId);
+    if (idx != -1) {
+      final p = _localPosts[idx];
+      List<String> newLikedBy = List.from(p.likedBy);
+      if (newLikedBy.contains(uid)) {
+        newLikedBy.remove(uid);
+      } else {
+        newLikedBy.add(uid);
+      }
+      _localPosts[idx] = Post(
+        id: p.id,
+        uid: p.uid,
+        username: p.username,
+        userAvatar: p.userAvatar,
+        imageUrl: p.imageUrl,
+        mediaUrls: p.mediaUrls,
+        caption: p.caption,
+        likes: newLikedBy.length,
+        likedBy: newLikedBy,
+        commentsCount: p.commentsCount,
+        createdAt: p.createdAt,
+      );
+      _streamController.add(List.from(_localPosts));
+    }
   }
 
-  static String timeAgo(DateTime? dt) {
-    if (dt == null) return '';
-    final diff = DateTime.now().difference(dt);
-    if (diff.inSeconds < 60) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w ago';
-    if (diff.inDays < 365) return '${(diff.inDays / 30).floor()}mo ago';
-    return '${(diff.inDays / 365).floor()}y ago';
-  }
+  static Future<void> toggleSave(String id) async {}
+  static Stream<bool> isSavedStream(String id) => Stream.value(false);
+  static Future<void> deletePost(String id) async {}
+  static String timeAgo(DateTime? dt) => 'just now';
 }

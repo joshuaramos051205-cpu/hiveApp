@@ -11,6 +11,8 @@ import '../auth/auth_service.dart';
 import '../core/app_theme.dart';
 import '../social/follow_service.dart';
 import '../profile/user_profile_screen.dart';
+import '../feed/feed_service.dart';
+import '../feed/post_model.dart';
 
 // ─── Profile Screen ───────────────────────────────────────────────────────────
 
@@ -70,8 +72,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 child: const Align(
                   alignment: Alignment.center,
-                  child: Text('🍯',
-                      style: TextStyle(fontSize: 70, height: 1.2)),
+                  child:
+                      Text('🍯', style: TextStyle(fontSize: 70, height: 1.2)),
                 ),
               ),
             ),
@@ -252,9 +254,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 unselectedLabelColor: AppTheme.textSecondary,
                 tabs: const [
                   Tab(icon: Icon(Icons.grid_on_rounded, size: 24)),
-                  Tab(
-                      icon: Icon(Icons.play_circle_outline_rounded,
-                          size: 24)),
+                  Tab(icon: Icon(Icons.play_circle_outline_rounded, size: 24)),
                 ],
               ),
             ),
@@ -294,8 +294,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2)),
+                color: Colors.white24, borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 16),
           const Text('Profile Photo',
@@ -338,10 +337,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (result == null || result.files.single.path == null) return;
 
     final file = File(result.files.single.path!);
-    final ref = FirebaseStorage.instance
-        .ref()
-        .child('avatars')
-        .child('$uid.jpg');
+    final ref =
+        FirebaseStorage.instance.ref().child('avatars').child('$uid.jpg');
 
     await ref.putFile(file);
     final url = await ref.getDownloadURL();
@@ -352,8 +349,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   // ── Edit Profile ──────────────────────────────────────────────────────────
   void _showEditProfile(BuildContext context, User? user) {
     final nameCtrl = TextEditingController(text: user?.displayName ?? '');
-    final bioCtrl =
-        TextEditingController(text: '🐝 Living life in the hive');
+    final bioCtrl = TextEditingController(text: '🐝 Living life in the hive');
 
     showModalBottomSheet(
       context: context,
@@ -435,8 +431,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2)),
+                color: Colors.white24, borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 16),
           const Text('Share Profile',
@@ -515,8 +510,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                 builder: (context, snap) {
                   if (!snap.hasData) {
                     return const Center(
-                        child: CircularProgressIndicator(
-                            color: AppTheme.primary));
+                        child:
+                            CircularProgressIndicator(color: AppTheme.primary));
                   }
                   final users = snap.data!;
                   if (users.isEmpty) {
@@ -541,22 +536,27 @@ class _ProfileScreenState extends State<ProfileScreen>
                       return ListTile(
                         onTap: () {
                           if (targetUid.isEmpty) return;
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => UserProfileScreen(uid: targetUid),
-                          ));
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    UserProfileScreen(uid: targetUid),
+                              ));
                         },
                         leading: GestureDetector(
                           onTap: () {
                             if (targetUid.isEmpty) return;
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => UserProfileScreen(uid: targetUid),
-                            ));
+                            Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      UserProfileScreen(uid: targetUid),
+                                ));
                           },
                           child: CircleAvatar(
                             backgroundColor: AppTheme.surfaceBg,
-                            backgroundImage: photo.isNotEmpty
-                                ? NetworkImage(photo)
-                                : null,
+                            backgroundImage:
+                                photo.isNotEmpty ? NetworkImage(photo) : null,
                             child: photo.isEmpty
                                 ? Text(
                                     name.isNotEmpty
@@ -573,8 +573,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 fontWeight: FontWeight.w600)),
                         subtitle: Text(email,
                             style: const TextStyle(
-                                color: AppTheme.textSecondary,
-                                fontSize: 12)),
+                                color: AppTheme.textSecondary, fontSize: 12)),
                         trailing: targetUid.isNotEmpty
                             ? _FollowBackButton(targetUid: targetUid)
                             : null,
@@ -605,27 +604,23 @@ class _ProfileScreenState extends State<ProfileScreen>
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2)),
+                color: Colors.white24, borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 16),
           ListTile(
-            leading:
-                const Icon(Icons.settings_outlined, color: Colors.white),
-            title: const Text('Settings',
-                style: TextStyle(color: Colors.white)),
-            onTap: () => Navigator.pop(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.bookmark_border_rounded,
-                color: Colors.white),
+            leading: const Icon(Icons.settings_outlined, color: Colors.white),
             title:
-                const Text('Saved', style: TextStyle(color: Colors.white)),
+                const Text('Settings', style: TextStyle(color: Colors.white)),
             onTap: () => Navigator.pop(context),
           ),
           ListTile(
             leading:
-                const Icon(Icons.logout_rounded, color: Colors.redAccent),
+                const Icon(Icons.bookmark_border_rounded, color: Colors.white),
+            title: const Text('Saved', style: TextStyle(color: Colors.white)),
+            onTap: () => Navigator.pop(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.logout_rounded, color: Colors.redAccent),
             title: const Text('Sign Out',
                 style: TextStyle(color: Colors.redAccent)),
             onTap: () async {
@@ -679,8 +674,8 @@ class _PostsGrid extends StatelessWidget {
           );
         }
 
-        final docs = List<QueryDocumentSnapshot>.from(
-            snapshot.data?.docs ?? []);
+        final docs =
+            List<QueryDocumentSnapshot>.from(snapshot.data?.docs ?? []);
         docs.sort((a, b) {
           final aT = (a.data() as Map)['createdAt'];
           final bT = (b.data() as Map)['createdAt'];
@@ -807,9 +802,8 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
   Future<void> _toggleLike() async {
     HapticFeedback.lightImpact();
     setState(() => _liked = !_liked);
-    final ref = FirebaseFirestore.instance
-        .collection('buzzes')
-        .doc(widget.doc.id);
+    final ref =
+        FirebaseFirestore.instance.collection('buzzes').doc(widget.doc.id);
     await FirebaseFirestore.instance.runTransaction((tx) async {
       final snap = await tx.get(ref);
       if (!snap.exists) return;
@@ -828,11 +822,9 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.cardBg,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Delete buzz?',
-            style: TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w700)),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
         content: const Text('This cannot be undone.',
             style: TextStyle(color: AppTheme.textSecondary)),
         actions: [
@@ -901,8 +893,8 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
                   style: const TextStyle(
                       color: Colors.white, fontWeight: FontWeight.w700)),
               subtitle: const Text('Just now',
-                  style: TextStyle(
-                      color: AppTheme.textSecondary, fontSize: 12)),
+                  style:
+                      TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
             ),
             if (text.isNotEmpty)
               Padding(
@@ -933,8 +925,7 @@ class _PostDetailScreenState extends State<_PostDetailScreen> {
                     ),
                   )),
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
                   GestureDetector(
@@ -1177,14 +1168,12 @@ class _FollowBackButtonState extends State<_FollowBackButton> {
                 },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
               color: isFollowing ? AppTheme.surfaceBg : AppTheme.primary,
               borderRadius: BorderRadius.circular(10),
-              border: isFollowing
-                  ? Border.all(color: AppTheme.dividerColor)
-                  : null,
+              border:
+                  isFollowing ? Border.all(color: AppTheme.dividerColor) : null,
             ),
             child: _loading
                 ? const SizedBox(
